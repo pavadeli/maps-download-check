@@ -1,10 +1,10 @@
-use crate::errors::*;
+use failure::Error;
 use rayon::prelude::*;
 use serde::Deserialize;
 use std::collections::HashMap;
 
 impl Manifest {
-    pub fn countries(&self) -> Result<Vec<&Country>> {
+    pub fn countries(&self) -> Result<Vec<&Country>, Error> {
         let mut country_map: HashMap<_, _> = self
             .drm_entry
             .map_catalog
@@ -18,9 +18,9 @@ impl Manifest {
             .regions
             .iter()
             .map(|r| {
-                country_map
-                    .remove(&r.id)
-                    .chain_err(|| format!("Could not link country with id: {} in update.xml", r.id))
+                country_map.remove(&r.id).ok_or_else(|| {
+                    format_err!("Could not link country with id: {} in update.xml", r.id)
+                })
             })
             .collect()
     }

@@ -1,7 +1,8 @@
 #[macro_use]
-extern crate error_chain;
+extern crate failure;
 
 use console::Style;
+use failure::{Error, Fail, ResultExt};
 use indicatif::{MultiProgress, ParallelProgressIterator, ProgressBar, ProgressStyle};
 use quick_xml::de::from_reader;
 use rayon::prelude::*;
@@ -16,18 +17,8 @@ use structopt::StructOpt;
 mod manifest;
 use manifest::*;
 
-mod errors {
-    error_chain! {
-        foreign_links {
-            Io(std::io::Error);
-            Xml(quick_xml::DeError);
-        }
-    }
-}
-use errors::*;
-
-#[derive(Debug, StructOpt)]
 /// Checks downloaded HereV1 maps and (optionally) deletes files that are corrupt so they can be downloaded again by the downloader.
+#[derive(Debug, StructOpt)]
 pub struct Opt {
     /// The directory where the downloaded maps are stored.
     pub dir: PathBuf,
@@ -37,11 +28,11 @@ pub struct Opt {
     pub force_delete: bool,
 }
 
-quick_main!(run);
+type Result<T> = std::result::Result<T, Error>;
 
-fn run() -> Result<()> {
+fn main() -> Result<()> {
     let bold = Style::new().bold();
-    let opt = Opt::from_args();
+    let opt: Opt = StructOpt::from_args();
     let path = opt.dir;
     let update_file = {
         let mut buf = path.clone();
@@ -51,15 +42,11 @@ fn run() -> Result<()> {
 
     println!("Using path: {}", bold.apply_to(path.to_string_lossy()));
 
-    let manifest: Manifest = with_message(
-        "reading update.xml",
-        || format!("Could not read: {:?}", update_file),
-        || {
-            let file = File::open(&update_file)?;
-            let parsed = from_reader(BufReader::new(file))?;
-            Ok(parsed)
-        },
-    )?;
+    let manifest: Manifest = {
+        let file =
+            File::open(&update_file).context("Could not open update.xml in provided path")?;
+        from_reader(BufReader::new(file)).context("Could not parse update.xml")?
+    };
 
     let countries = manifest.countries()?;
     let file_count = countries.iter().map(|c| c.file_count()).sum();
@@ -71,24 +58,20 @@ fn run() -> Result<()> {
         bold.apply_to(file_count)
     );
 
-    let zip_files: HashMap<_, _> = with_message(
-        "reading dir entries",
-        || format!("Could not read dir: {:?}", path),
-        || {
-            Ok(read_dir(&path)?
-                .filter_map(|f| match f {
-                    Err(e) => Some(Err(e.into())),
-                    Ok(e) if e.path().extension()? == "zip" => Some(Ok((
-                        e.path().file_name()?.to_string_lossy().into_owned(),
-                        e,
-                    ))),
-                    _ => None,
-                })
-                .collect::<Result<Vec<_>>>()?
-                .into_iter()
-                .collect())
-        },
-    )?;
+    let zip_files: HashMap<_, _> = read_dir(&path)
+        .context("Could not read directory entries")?
+        .filter_map(|f| match f {
+            Err(e) => Some(Err(e.into())),
+            Ok(e) if e.path().extension()? == "zip" => Some(Ok((
+                e.path().file_name()?.to_string_lossy().into_owned(),
+                e,
+            ))),
+            _ => None,
+        })
+        .collect::<Result<Vec<_>>>()
+        .context("Error while reading directory entries")?
+        .into_iter()
+        .collect();
 
     println!(
         "Found {} relevant files in path",
@@ -104,14 +87,12 @@ fn run() -> Result<()> {
     );
     let bars_thread = {
         let bars = bars.clone();
-        thread::spawn(move || {
-            bars.join_and_clear().unwrap();
-        })
+        thread::spawn(move || bars.join_and_clear())
     };
 
-    let problems = Arc::new(Mutex::new(vec![]));
-    let sty =
-        ProgressStyle::default_bar().template("[{elapsed_precise}] {bar:40.cyan/blue} ({total_bytes:>8}) {wide_msg}");
+    let problems: Arc<Mutex<Vec<_>>> = Arc::default();
+    let bar_style = ProgressStyle::default_bar()
+        .template("[{elapsed_precise}] {bar:40.cyan/blue} ({total_bytes:>8}) {wide_msg}");
     countries
         .par_iter()
         .flat_map(|c| c.files())
@@ -120,56 +101,52 @@ fn run() -> Result<()> {
             || {
                 (
                     problems.clone(),
-                    bars.add(ProgressBar::new(100)).with_style(sty.clone()),
+                    bars.add(ProgressBar::new(100))
+                        .with_style(bar_style.clone()),
                 )
             },
-            |(problems, bar), file| match zip_files.get(&file.filename) {
+            |(problems, bar), expected_file| match zip_files.get(&expected_file.filename) {
                 None => problems.lock().unwrap().push(Problem::NotFound {
-                    filename: file.filename,
+                    filename: expected_file.filename,
                 }),
-                Some(zip_file) => {
-                    let zip_size = zip_file.metadata().unwrap().len();
-                    let size = file.packedsize();
-                    if zip_size != size {
-                        problems.lock().unwrap().push(Problem::WrongSize {
-                            filename: file.filename,
-                            expected: size,
-                            got: zip_size,
-                        });
-                        return;
-                    }
-                    bar.set_message(&file.filename);
+                Some(actual_file) => {
+                    let size = expected_file.packedsize();
+                    bar.set_message(&expected_file.filename);
                     bar.set_length(size);
-                    let expected = file.md5().to_string();
-                    match get_md5(bar, zip_file.path()) {
-                        Err(e) => problems.lock().unwrap().push(Problem::Error(e.into())),
-                        Ok(got) if got == expected => (),
-                        Ok(got) => problems.lock().unwrap().push(Problem::WrongSignature {
-                            filename: file.filename,
-                            got,
-                            expected,
-                        }),
+                    let result = (|| -> Result<()> {
+                        let zip_size = actual_file.metadata()?.len();
+                        if zip_size != size {
+                            Err(Problem::WrongSize {
+                                filename: expected_file.filename.clone(),
+                                expected: size,
+                                got: zip_size,
+                            })?;
+                        }
+                        let expected = expected_file.md5();
+                        let got = get_md5(bar, actual_file.path())?;
+                        if got != expected {
+                            Err(Problem::WrongSignature {
+                                filename: expected_file.filename.clone(),
+                                got,
+                                expected: expected.to_string(),
+                            })?;
+                        }
+                        Ok(())
+                    })();
+                    if let Err(e) = result {
+                        match e.downcast() {
+                            Ok(p) => problems.lock().unwrap().push(p),
+                            Err(e) => problems.lock().unwrap().push(Problem::Error(e)),
+                        }
                     }
                 }
             },
         );
 
-    bars_thread.join().unwrap();
+    bars_thread.join().unwrap()?;
     println!("Problems: {:#?}", problems.lock().unwrap());
 
-    println!("ZIP files: {}", zip_files.len());
     Ok(())
-}
-
-fn with_message<R, EK: Into<ErrorKind>>(
-    msg: &str,
-    error: impl FnOnce() -> EK,
-    f: impl FnOnce() -> Result<R>,
-) -> Result<R> {
-    let pb = ProgressBar::new_spinner();
-    pb.set_message(&format!("{}", msg));
-    pb.enable_steady_tick(100);
-    f().chain_err(error)
 }
 
 fn get_md5(bar: &ProgressBar, path: impl AsRef<Path>) -> Result<String> {
@@ -187,20 +164,25 @@ fn get_md5(bar: &ProgressBar, path: impl AsRef<Path>) -> Result<String> {
     Ok(format!("{:x}", context.compute()))
 }
 
-#[derive(Debug)]
+#[derive(Debug, Fail)]
 enum Problem {
-    NotFound {
-        filename: String,
-    },
+    #[fail(display = "File {} was not found", filename)]
+    NotFound { filename: String },
+    #[fail(display = "File {} as size: {}, expected: {}", filename, got, expected)]
     WrongSize {
         filename: String,
         expected: u64,
         got: u64,
     },
+    #[fail(
+        display = "File {} as signature: {}, expected: {}",
+        filename, got, expected
+    )]
     WrongSignature {
         filename: String,
         expected: String,
         got: String,
     },
-    Error(errors::Error),
+    #[fail(display = "Error: {}", _0)]
+    Error(Error),
 }
