@@ -1,10 +1,17 @@
-use failure::Error;
+use super::Result;
+use failure::ResultExt;
+use quick_xml::de::from_reader;
 use rayon::prelude::*;
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::{collections::HashMap, fs::File, io::BufReader, path::Path};
 
 impl Manifest {
-    pub fn countries(&self) -> Result<Vec<&Country>, Error> {
+    pub fn open(path: impl AsRef<Path>) -> Result<Self> {
+        let file = File::open(path).context("Could not open update.xml in provided path")?;
+        Ok(from_reader(BufReader::new(file)).context("Could not parse update.xml")?)
+    }
+
+    pub fn countries(&self) -> Result<Vec<&Country>> {
         let mut country_map: HashMap<_, _> = self
             .drm_entry
             .map_catalog

@@ -4,11 +4,10 @@ extern crate failure;
 use console::Style;
 use failure::{Error, Fail, ResultExt};
 use indicatif::{MultiProgress, ParallelProgressIterator, ProgressBar, ProgressStyle};
-use quick_xml::de::from_reader;
 use rayon::prelude::*;
 use std::collections::HashMap;
-use std::fs::{read_dir, File};
-use std::io::{prelude::*, BufReader};
+use std::fs::{read_dir, DirEntry, File};
+use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -42,12 +41,7 @@ fn main() -> Result<()> {
 
     println!("Using path: {}", bold.apply_to(path.to_string_lossy()));
 
-    let manifest: Manifest = {
-        let file =
-            File::open(&update_file).context("Could not open update.xml in provided path")?;
-        from_reader(BufReader::new(file)).context("Could not parse update.xml")?
-    };
-
+    let manifest = Manifest::open(update_file)?;
     let countries = manifest.countries()?;
     let file_count = countries.iter().map(|c| c.file_count()).sum();
 
@@ -58,7 +52,40 @@ fn main() -> Result<()> {
         bold.apply_to(file_count)
     );
 
-    let zip_files: HashMap<_, _> = read_dir(&path)
+    let zip_files = find_zip_files(path)?;
+
+    println!(
+        "Found {} relevant files in path",
+        bold.apply_to(zip_files.len())
+    );
+
+    println!("Performing integrity check...");
+    let problems = analyze(&countries, &zip_files, file_count)?;
+
+    report_problems(&problems);
+
+    // TODO: implement confirmation and deletion logic
+
+    Ok(())
+}
+
+fn get_md5(bar: &ProgressBar, path: impl AsRef<Path>) -> Result<String> {
+    let mut file = File::open(path)?;
+    let mut context = md5::Context::new();
+    let mut buffer = [0; 8 * 1024];
+    loop {
+        let n = file.read(&mut buffer)?;
+        if n == 0 {
+            break;
+        }
+        bar.inc(n as u64);
+        context.consume(&buffer[..n]);
+    }
+    Ok(format!("{:x}", context.compute()))
+}
+
+fn find_zip_files(path: impl AsRef<Path>) -> Result<HashMap<String, DirEntry>> {
+    Ok(read_dir(path)
         .context("Could not read directory entries")?
         .filter_map(|f| match f {
             Err(e) => Some(Err(e.into())),
@@ -71,15 +98,14 @@ fn main() -> Result<()> {
         .collect::<Result<Vec<_>>>()
         .context("Error while reading directory entries")?
         .into_iter()
-        .collect();
+        .collect())
+}
 
-    println!(
-        "Found {} relevant files in path",
-        bold.apply_to(zip_files.len())
-    );
-
-    println!("Performing integrity check...");
-
+fn analyze(
+    countries: &[&Country],
+    zip_files: &HashMap<String, DirEntry>,
+    file_count: u64,
+) -> Result<Vec<Problem>> {
     let bars = Arc::new(MultiProgress::new());
     let main_bar = bars.add(ProgressBar::new(file_count)).with_style(
         ProgressStyle::default_bar()
@@ -89,10 +115,10 @@ fn main() -> Result<()> {
         let bars = bars.clone();
         thread::spawn(move || bars.join_and_clear())
     };
-
-    let problems: Arc<Mutex<Vec<_>>> = Arc::default();
+    let problems: Arc<Mutex<Vec<Problem>>> = Arc::default();
     let bar_style = ProgressStyle::default_bar()
         .template("[{elapsed_precise}] {bar:40.cyan/blue} ({total_bytes:>8}) {wide_msg}");
+
     countries
         .par_iter()
         .flat_map(|c| c.files())
@@ -144,38 +170,49 @@ fn main() -> Result<()> {
         );
 
     bars_thread.join().unwrap()?;
-    println!("Problems: {:#?}", problems.lock().unwrap());
 
-    Ok(())
+    Ok(Arc::try_unwrap(problems).unwrap().into_inner().unwrap())
 }
 
-fn get_md5(bar: &ProgressBar, path: impl AsRef<Path>) -> Result<String> {
-    let mut file = File::open(path)?;
-    let mut context = md5::Context::new();
-    let mut buffer = [0; 8 * 1024];
-    loop {
-        let n = file.read(&mut buffer)?;
-        if n == 0 {
-            break;
+fn report_problems(problems: &[Problem]) {
+    println!();
+    let (missing, other): (Vec<&Problem>, Vec<&Problem>) = problems
+        .iter()
+        .partition(|&p| matches!(p, Problem::NotFound{..}));
+    let missing: Vec<&str> = missing
+        .into_iter()
+        .map(|p| match p {
+            Problem::NotFound { filename } => &filename[..],
+            _ => panic!("should not occur"),
+        })
+        .collect();
+    match missing.len() + other.len() {
+        0 => println!("No problems encountered, you are good to go!"),
+        n => {
+            println!("Encountered {} problem(s):", n);
+            println!("- {} missing files: {}", missing.len(), missing.join(", "));
+            for problem in &*other {
+                println!("- {}", problem);
+            }
         }
-        bar.inc(n as u64);
-        context.consume(&buffer[..n]);
     }
-    Ok(format!("{:x}", context.compute()))
 }
 
 #[derive(Debug, Fail)]
 enum Problem {
     #[fail(display = "File {} was not found", filename)]
     NotFound { filename: String },
-    #[fail(display = "File {} as size: {}, expected: {}", filename, got, expected)]
+    #[fail(
+        display = "File {} has size: {}, expected: {}",
+        filename, got, expected
+    )]
     WrongSize {
         filename: String,
         expected: u64,
         got: u64,
     },
     #[fail(
-        display = "File {} as signature: {}, expected: {}",
+        display = "File {} has signature: {:?}, expected: {:?}",
         filename, got, expected
     )]
     WrongSignature {
