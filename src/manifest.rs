@@ -1,4 +1,4 @@
-use super::Result;
+use crate::problem::Result;
 use failure::ResultExt;
 use quick_xml::de::from_reader;
 use rayon::prelude::*;
@@ -6,7 +6,7 @@ use serde::Deserialize;
 use std::{collections::HashMap, fs::File, io::BufReader, path::Path};
 
 impl Manifest {
-    pub fn open(path: impl AsRef<Path>) -> Result<Self> {
+    pub fn open(path: &Path) -> Result<Self> {
         let file = File::open(path).context("Could not open update.xml in provided path")?;
         Ok(from_reader(BufReader::new(file)).context("Could not parse update.xml")?)
     }
