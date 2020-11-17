@@ -3,7 +3,7 @@ extern crate failure;
 
 use crate::{
     manifest::{Country, Manifest},
-    problem::{Problem, Result},
+    problem::{Problem, ProblemList, Result},
     processor::Processor,
 };
 use console::Style;
@@ -12,7 +12,8 @@ use indicatif::{MultiProgress, ParallelProgressIterator, ProgressBar, ProgressSt
 use rayon::prelude::*;
 use std::{
     collections::HashMap,
-    fs::{read_dir, DirEntry},
+    fs::{read_dir, remove_file, DirEntry},
+    io::{stdin, stdout, Write},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     thread,
@@ -63,9 +64,33 @@ fn main() -> Result<()> {
     println!("Performing integrity check...");
     let problems = analyze(&countries, &zip_files, file_count)?;
 
+    println!();
     report_problems(&problems);
 
-    // TODO: implement confirmation and deletion logic
+    let corrupt = problems.corrupt_files();
+
+    if corrupt.is_empty() {
+        println!("No actions needed.");
+        return Ok(());
+    }
+
+    if !opt.force_delete {
+        print!("Do you want to remove the corrupt files? (Y/n) ");
+        stdout().flush()?;
+        let mut response = String::new();
+        stdin().read_line(&mut response)?;
+        if !matches!(response.trim(), "" | "y" | "Y") {
+            println!("Aborting");
+            return Ok(());
+        }
+    }
+
+    for file in corrupt {
+        println!("Removing: {}", file);
+        remove_file(path.join(file))?;
+    }
+
+    println!("Done.");
 
     Ok(())
 }
@@ -131,25 +156,15 @@ fn analyze(
 }
 
 fn report_problems(problems: &[Problem]) {
-    println!();
-    let (missing, other): (Vec<_>, Vec<_>) = problems
-        .iter()
-        .partition(|p| matches!(p, Problem::NotFound{..}));
-    let missing: Vec<&str> = missing
-        .into_iter()
-        .map(|p| match p {
-            Problem::NotFound { filename } => &filename[..],
-            _ => panic!("should not occur"),
-        })
-        .collect();
-    match missing.len() + other.len() {
-        0 => println!("No problems encountered, you are good to go!"),
-        n => {
-            println!("Encountered {} problem(s):", n);
-            println!("- {} missing files: {}", missing.len(), missing.join(", "));
-            for problem in other {
-                println!("- {}", problem);
-            }
-        }
+    if problems.is_empty() {
+        println!("No problems encountered, you are good to go!");
+        return;
+    }
+    println!("Encountered {} problem(s):", problems.len());
+    if let Some(s) = problems.missing_files_msg() {
+        println!("- {}", s)
+    }
+    for p in problems.other_errors() {
+        println!("- {}", p);
     }
 }
