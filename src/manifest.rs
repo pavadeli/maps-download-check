@@ -1,5 +1,4 @@
-use crate::problem::Result;
-use failure::ResultExt;
+use anyhow::{anyhow, Context, Result};
 use quick_xml::de::from_reader;
 use rayon::prelude::*;
 use serde::Deserialize;
@@ -26,7 +25,7 @@ impl Manifest {
             .iter()
             .map(|r| {
                 country_map.remove(&r.id).ok_or_else(|| {
-                    format_err!("Could not link country with id: {} in update.xml", r.id)
+                    anyhow!("Could not link country with id: {} in update.xml", r.id)
                 })
             })
             .collect()

@@ -1,29 +1,23 @@
-pub type Result<T> = std::result::Result<T, failure::Error>;
+use thiserror::Error;
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Error)]
 pub enum Problem {
-    #[fail(display = "File {} was not found", filename)]
+    #[error("File {filename} was not found")]
     NotFound { filename: String },
-    #[fail(
-        display = "File {} has size: {}, expected: {}",
-        filename, got, expected
-    )]
+    #[error("File {filename} has size: {got:?}, expected: {expected:?}")]
     WrongSize {
         filename: String,
         expected: u64,
         got: u64,
     },
-    #[fail(
-        display = "File {} has signature: {:?}, expected: {:?}",
-        filename, got, expected
-    )]
+    #[error("File {filename} has signature: {got:?}, expected: {expected:?}")]
     WrongSignature {
         filename: String,
         expected: String,
         got: String,
     },
-    #[fail(display = "Error: {}", _0)]
-    Error(failure::Error),
+    #[error(transparent)]
+    Error(#[from] anyhow::Error),
 }
 
 pub trait ProblemList {

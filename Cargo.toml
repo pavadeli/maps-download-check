@@ -14,4 +14,5 @@ serde = { version = "1.0.117", features = ["derive"] }
 quick-xml = { version = "0.20.0", features = ["serialize"] }
 console = "0.13.0"
 md5 = "0.7.0"
-failure = "0.1.8"
+anyhow = "1.0.36"
+thiserror = "1.0.22"

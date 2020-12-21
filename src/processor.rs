@@ -1,7 +1,5 @@
-use crate::{
-    manifest::ZipFile,
-    problem::{Problem, Result},
-};
+use crate::{manifest::ZipFile, problem::Problem};
+use anyhow::Result;
 use indicatif::ProgressBar;
 use std::{
     fs::{DirEntry, File},
@@ -32,7 +30,7 @@ impl Processor {
         if let Err(e) = self.try_process_file(actual_file, expected_file) {
             match e.downcast() {
                 Ok(p) => self.problems.lock().unwrap().push(p),
-                Err(e) => self.problems.lock().unwrap().push(Problem::Error(e)),
+                Err(e) => self.problems.lock().unwrap().push(e.into()),
             }
         }
     }
@@ -44,7 +42,8 @@ impl Processor {
                 filename: expected_file.filename,
                 expected: size,
                 got: zip_size,
-            }.into());
+            }
+            .into());
         }
         let expected = expected_file.md5();
         let got = self.get_md5(&actual_file.path())?;
@@ -54,7 +53,8 @@ impl Processor {
                 filename: expected_file.filename,
                 got,
                 expected,
-            }.into());
+            }
+            .into());
         }
         Ok(())
     }

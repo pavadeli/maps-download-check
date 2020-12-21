@@ -1,13 +1,10 @@
-#[macro_use]
-extern crate failure;
-
 use crate::{
     manifest::{Country, Manifest},
-    problem::{Problem, ProblemList, Result},
+    problem::{Problem, ProblemList},
     processor::Processor,
 };
+use anyhow::{Context, Result};
 use console::Style;
-use failure::ResultExt;
 use indicatif::{MultiProgress, ParallelProgressIterator, ProgressBar, ProgressStyle};
 use rayon::prelude::*;
 use std::{
