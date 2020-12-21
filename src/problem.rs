@@ -35,7 +35,7 @@ pub trait ProblemList {
 impl ProblemList for [Problem] {
     fn missing_files_msg(&self) -> Option<String> {
         let filenames: Vec<_> = self
-            .into_iter()
+            .iter()
             .filter_map(|p| match p {
                 Problem::NotFound { filename } => Some(&filename[..]),
                 _ => None,
@@ -57,13 +57,13 @@ impl ProblemList for [Problem] {
     }
 
     fn other_errors(&self) -> Vec<&Problem> {
-        self.into_iter()
+        self.iter()
             .filter(|p| !matches!(p, Problem::NotFound{..}))
             .collect()
     }
 
     fn corrupt_files(&self) -> Vec<&str> {
-        self.into_iter()
+        self.iter()
             .filter_map(|p| match p {
                 Problem::WrongSignature { filename, .. } | Problem::WrongSize { filename, .. } => {
                     Some(&filename[..])

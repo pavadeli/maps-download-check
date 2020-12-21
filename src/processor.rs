@@ -44,7 +44,7 @@ impl Processor {
                 filename: expected_file.filename,
                 expected: size,
                 got: zip_size,
-            })?;
+            }.into());
         }
         let expected = expected_file.md5();
         let got = self.get_md5(&actual_file.path())?;
@@ -54,7 +54,7 @@ impl Processor {
                 filename: expected_file.filename,
                 got,
                 expected,
-            })?;
+            }.into());
         }
         Ok(())
     }
