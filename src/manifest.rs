@@ -7,7 +7,7 @@ use std::{collections::HashMap, fs::File, io::BufReader, path::Path};
 impl Manifest {
     pub fn open(path: &Path) -> Result<Self> {
         let file = File::open(path).context("Could not open update.xml in provided path")?;
-        Ok(from_reader(BufReader::new(file)).context("Could not parse update.xml")?)
+        from_reader(BufReader::new(file)).context("Could not parse update.xml")
     }
 
     pub fn countries(&self) -> Result<Vec<&Country>> {

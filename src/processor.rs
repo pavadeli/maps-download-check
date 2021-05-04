@@ -24,8 +24,9 @@ impl Processor {
             buf: [0; BUF_SIZE],
         }
     }
+
     pub fn process_file(&mut self, actual_file: &DirEntry, expected_file: ZipFile) {
-        self.bar.set_message(&expected_file.filename);
+        self.bar.set_message(expected_file.filename.clone());
         self.bar.set_length(expected_file.packedsize());
         if let Err(e) = self.try_process_file(actual_file, expected_file) {
             match e.downcast() {
@@ -34,6 +35,7 @@ impl Processor {
             }
         }
     }
+
     fn try_process_file(&mut self, actual_file: &DirEntry, expected_file: ZipFile) -> Result<()> {
         let size = expected_file.packedsize();
         let zip_size = actual_file.metadata()?.len();
@@ -58,6 +60,7 @@ impl Processor {
         }
         Ok(())
     }
+
     fn get_md5(&mut self, path: &Path) -> Result<String> {
         let mut file = File::open(path)?;
         let mut context = md5::Context::new();
