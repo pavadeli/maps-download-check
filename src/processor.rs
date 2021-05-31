@@ -29,10 +29,10 @@ impl Processor {
         self.bar.set_message(expected_file.filename.clone());
         self.bar.set_length(expected_file.packedsize());
         if let Err(e) = self.try_process_file(actual_file, expected_file) {
-            match e.downcast() {
-                Ok(p) => self.problems.lock().unwrap().push(p),
-                Err(e) => self.problems.lock().unwrap().push(e.into()),
-            }
+            self.problems
+                .lock()
+                .unwrap()
+                .push(e.downcast().unwrap_or_else(|e| e.into()))
         }
     }
 

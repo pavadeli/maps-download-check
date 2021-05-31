@@ -93,7 +93,7 @@ fn main() -> Result<()> {
 }
 
 fn find_zip_files(path: &Path) -> Result<HashMap<String, DirEntry>> {
-    Ok(read_dir(path)
+    read_dir(path)
         .context("Could not read directory entries")?
         .filter_map(|f| match f {
             Err(e) => Some(Err(e.into())),
@@ -103,10 +103,8 @@ fn find_zip_files(path: &Path) -> Result<HashMap<String, DirEntry>> {
             ))),
             _ => None,
         })
-        .collect::<Result<Vec<_>>>()
-        .context("Error while reading directory entries")?
-        .into_iter()
-        .collect())
+        .collect::<Result<HashMap<String, DirEntry>>>()
+        .context("Error while reading directory entries")
 }
 
 fn analyze(

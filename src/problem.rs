@@ -4,7 +4,7 @@ use thiserror::Error;
 pub enum Problem {
     #[error("File {filename} was not found")]
     NotFound { filename: String },
-    #[error("File {filename} has size: {got:?}, expected: {expected:?}")]
+    #[error("File {filename} has size: {got}, expected: {expected}")]
     WrongSize {
         filename: String,
         expected: u64,
@@ -52,7 +52,7 @@ impl ProblemList for [Problem] {
 
     fn other_errors(&self) -> Vec<&Problem> {
         self.iter()
-            .filter(|p| !matches!(p, Problem::NotFound{..}))
+            .filter(|p| !matches!(p, Problem::NotFound { .. }))
             .collect()
     }
 
