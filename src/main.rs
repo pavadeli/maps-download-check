@@ -3,10 +3,11 @@ use crate::{
     problem::{Problem, ProblemList},
     processor::Processor,
 };
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use console::Style;
 use indicatif::{MultiProgress, ParallelProgressIterator, ProgressBar, ProgressStyle};
 use rayon::prelude::*;
+use rfd::FileDialog;
 use std::{
     collections::HashMap,
     fs::{read_dir, remove_file, DirEntry},
@@ -24,8 +25,8 @@ mod processor;
 /// Checks downloaded HereV1 maps and (optionally) deletes files that are corrupt so they can be downloaded again by the downloader.
 #[derive(Debug, StructOpt)]
 pub struct Opt {
-    /// The directory where the downloaded maps are stored.
-    pub dir: PathBuf,
+    /// The directory where the downloaded maps are stored. Presents a folder-picker if not provided.
+    pub dir: Option<PathBuf>,
 
     /// Delete corrupt files without confirmation.
     #[structopt(short, long)]
@@ -35,7 +36,13 @@ pub struct Opt {
 fn main() -> Result<()> {
     let bold = Style::new().bold();
     let opt: Opt = StructOpt::from_args();
-    let path = opt.dir;
+    let path = opt
+        .dir
+        .or_else(|| {
+            println!("Please select the folder that contains the update.xml");
+            FileDialog::new().pick_folder()
+        })
+        .ok_or_else(|| anyhow!("aborted"))?;
     let update_file = path.join("update.xml");
 
     println!("Using path: {}", bold.apply_to(path.to_string_lossy()));
