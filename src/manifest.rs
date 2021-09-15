@@ -1,6 +1,5 @@
 use anyhow::{anyhow, Context, Result};
 use quick_xml::de::from_reader;
-use rayon::prelude::*;
 use serde::Deserialize;
 use std::{collections::HashMap, fs::File, io::BufReader, path::Path};
 
@@ -37,25 +36,15 @@ impl Manifest {
 }
 
 impl Country {
-    pub fn file_count(&self) -> u64 {
-        let opt_sr = if self.speech_recognition.is_some() {
-            1
-        } else {
-            0
-        };
-        self.data_groups.len() as u64 + opt_sr
-    }
-    pub fn files(&self) -> impl ParallelIterator<Item = ZipFile> {
+    pub fn files(&self) -> impl Iterator<Item = ZipFile> {
         self.data_groups
-            .par_iter()
-            .map(move |dg| ZipFile {
-                filename: format!("{}_{:02}.zip", self.id, dg.id),
-                info: &dg.info,
-            })
-            .chain(self.speech_recognition.as_ref().map(|info| ZipFile {
-                filename: format!("{}_speech_recognition.zip", self.id),
-                info,
-            }))
+            .iter()
+            .map(move |dg| ZipFile::new(format!("{}_{:02}.zip", self.id, dg.id), &dg.info))
+            .chain(
+                self.speech_recognition
+                    .as_ref()
+                    .map(|info| ZipFile::new(format!("{}_speech_recognition.zip", self.id), info)),
+            )
     }
 }
 
@@ -122,19 +111,17 @@ struct DataGroup {
 }
 
 pub struct ZipFile<'a> {
-    info: &'a FileInfo,
     pub filename: String,
+    pub packedsize: u64,
+    pub md5: &'a str,
 }
 
 impl<'a> ZipFile<'a> {
-    pub fn md5(&self) -> &str {
-        &self.info.md5
-    }
-
-    pub fn packedsize(&self) -> u64 {
-        self.info
-            .packedsize
-            .parse()
-            .expect("Could not parse packedsize")
+    fn new(filename: String, info: &'a FileInfo) -> Self {
+        ZipFile {
+            filename,
+            packedsize: info.packedsize.parse().expect("Could not parse packedsize"),
+            md5: &info.md5,
+        }
     }
 }

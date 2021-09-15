@@ -1,5 +1,6 @@
 use crate::{manifest::ZipFile, problem::Problem};
 use anyhow::Result;
+use indicatif::ProgressBar;
 use std::{
     fs::{DirEntry, File},
     io::Read,
@@ -11,28 +12,32 @@ const BUF_SIZE: usize = 8 * 1024;
 
 pub struct Processor {
     problems: Arc<Mutex<Vec<Problem>>>,
+    bar: ProgressBar,
     buf: [u8; BUF_SIZE],
 }
 
 impl Processor {
-    pub fn create(problems: Arc<Mutex<Vec<Problem>>>) -> Self {
+    pub fn create(problems: Arc<Mutex<Vec<Problem>>>, bar: ProgressBar) -> Self {
         Self {
             problems,
+            bar,
             buf: [0; BUF_SIZE],
         }
     }
 
     pub fn process_file(&mut self, actual_file: &DirEntry, expected_file: ZipFile) {
+        let size = expected_file.packedsize;
         if let Err(e) = self.try_process_file(actual_file, expected_file) {
             self.problems
                 .lock()
                 .unwrap()
                 .push(e.downcast().unwrap_or_else(|e| e.into()))
         }
+        self.bar.inc(size);
     }
 
     fn try_process_file(&mut self, actual_file: &DirEntry, expected_file: ZipFile) -> Result<()> {
-        let size = expected_file.packedsize();
+        let size = expected_file.packedsize;
         let zip_size = actual_file.metadata()?.len();
         if zip_size != size {
             return Err(Problem::WrongSize {
@@ -42,7 +47,7 @@ impl Processor {
             }
             .into());
         }
-        let expected = expected_file.md5();
+        let expected = expected_file.md5;
         let got = self.get_md5(&actual_file.path())?;
         if got != expected {
             let expected = expected.to_string();

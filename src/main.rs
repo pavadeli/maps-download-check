@@ -1,11 +1,11 @@
 use crate::{
-    manifest::{Country, Manifest},
+    manifest::{Manifest, ZipFile},
     problem::{Problem, ProblemList},
     processor::Processor,
 };
 use anyhow::{anyhow, Context, Result};
 use console::Style;
-use indicatif::{ParallelProgressIterator, ProgressBar, ProgressStyle};
+use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
 use rayon::prelude::*;
 use rfd::FileDialog;
 use std::{
@@ -48,14 +48,18 @@ fn main() -> Result<()> {
 
     let manifest = Manifest::open(&update_file)?;
     let countries = manifest.countries()?;
-    let file_count = countries.iter().map(|c| c.file_count()).sum();
+    let country_count = countries.len();
+    let files: Vec<_> = countries.into_iter().flat_map(|c| c.files()).collect();
+    let total_size = files.iter().map(|f| f.packedsize).sum();
 
     println!(
         "Found maps for region: {} ({} countries in {} files)",
         bold.apply_to(manifest.region_name()),
-        bold.apply_to(countries.len()),
-        bold.apply_to(file_count)
+        bold.apply_to(country_count),
+        bold.apply_to(files.len())
     );
+
+    println!("Total size: {}", bold.apply_to(HumanBytes(total_size)));
 
     let zip_files = find_zip_files(&path)?;
 
@@ -65,7 +69,7 @@ fn main() -> Result<()> {
     );
 
     println!("Performing integrity check...");
-    let problems = analyze(&countries, &zip_files, file_count)?;
+    let problems = analyze(files, &zip_files, total_size)?;
 
     println!();
     report_problems(&problems);
@@ -114,29 +118,27 @@ fn find_zip_files(path: &Path) -> Result<HashMap<String, DirEntry>> {
 }
 
 fn analyze(
-    countries: &[&Country],
+    files: Vec<ZipFile>,
     zip_files: &HashMap<String, DirEntry>,
-    file_count: u64,
+    total_size: u64,
 ) -> Result<Vec<Problem>> {
-    let pb = ProgressBar::new(file_count).with_style(
+    let pb = ProgressBar::new(total_size).with_style(
         ProgressStyle::default_bar()
-            .template("[{elapsed_precise}] {bar:40} file {pos:.bold} of {len:.bold} ({eta})"),
+            .template("[{elapsed_precise}] {bar:40} {bytes:.bold}/{total_bytes:.bold}"),
     );
     let problems: Arc<Mutex<Vec<Problem>>> = Arc::default();
 
-    countries
-        .par_iter()
-        .flat_map(|c| c.files())
-        .progress_with(pb)
-        .for_each_init(
-            || Processor::create(problems.clone()),
-            |processor, expected_file| match zip_files.get(&expected_file.filename) {
-                None => problems.lock().unwrap().push(Problem::NotFound {
-                    filename: expected_file.filename,
-                }),
-                Some(actual_file) => processor.process_file(actual_file, expected_file),
-            },
-        );
+    files.into_par_iter().for_each_init(
+        || Processor::create(problems.clone(), pb.clone()),
+        |processor, expected_file| match zip_files.get(&expected_file.filename) {
+            None => problems.lock().unwrap().push(Problem::NotFound {
+                filename: expected_file.filename,
+            }),
+            Some(actual_file) => processor.process_file(actual_file, expected_file),
+        },
+    );
+
+    pb.abandon();
 
     Ok(Arc::try_unwrap(problems).unwrap().into_inner().unwrap())
 }
