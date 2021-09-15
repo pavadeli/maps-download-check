@@ -1,6 +1,5 @@
 use crate::{manifest::ZipFile, problem::Problem};
 use anyhow::Result;
-use indicatif::ProgressBar;
 use std::{
     fs::{DirEntry, File},
     io::Read,
@@ -12,22 +11,18 @@ const BUF_SIZE: usize = 8 * 1024;
 
 pub struct Processor {
     problems: Arc<Mutex<Vec<Problem>>>,
-    bar: ProgressBar,
     buf: [u8; BUF_SIZE],
 }
 
 impl Processor {
-    pub fn create(problems: Arc<Mutex<Vec<Problem>>>, bar: ProgressBar) -> Self {
+    pub fn create(problems: Arc<Mutex<Vec<Problem>>>) -> Self {
         Self {
             problems,
-            bar,
             buf: [0; BUF_SIZE],
         }
     }
 
     pub fn process_file(&mut self, actual_file: &DirEntry, expected_file: ZipFile) {
-        self.bar.set_message(expected_file.filename.clone());
-        self.bar.set_length(expected_file.packedsize());
         if let Err(e) = self.try_process_file(actual_file, expected_file) {
             self.problems
                 .lock()
@@ -69,7 +64,6 @@ impl Processor {
             if n == 0 {
                 break;
             }
-            self.bar.inc(n as u64);
             context.consume(&self.buf[..n]);
         }
         Ok(format!("{:x}", context.compute()))

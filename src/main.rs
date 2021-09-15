@@ -5,7 +5,7 @@ use crate::{
 };
 use anyhow::{anyhow, Context, Result};
 use console::Style;
-use indicatif::{MultiProgress, ParallelProgressIterator, ProgressBar, ProgressStyle};
+use indicatif::{ParallelProgressIterator, ProgressBar, ProgressStyle};
 use rayon::prelude::*;
 use rfd::FileDialog;
 use std::{
@@ -14,7 +14,6 @@ use std::{
     io::{stdin, stdout, Write},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
-    thread,
 };
 use structopt::StructOpt;
 
@@ -119,31 +118,18 @@ fn analyze(
     zip_files: &HashMap<String, DirEntry>,
     file_count: u64,
 ) -> Result<Vec<Problem>> {
-    let bars = Arc::new(MultiProgress::new());
-    let main_bar = bars.add(ProgressBar::new(file_count)).with_style(
+    let pb = ProgressBar::new(file_count).with_style(
         ProgressStyle::default_bar()
             .template("[{elapsed_precise}] {bar:40} file {pos:.bold} of {len:.bold} ({eta})"),
     );
-    let bars_thread = {
-        let bars = bars.clone();
-        thread::spawn(move || bars.join_and_clear())
-    };
     let problems: Arc<Mutex<Vec<Problem>>> = Arc::default();
-    let bar_style = ProgressStyle::default_bar()
-        .template("[{elapsed_precise}] {bar:40.cyan/blue} ({total_bytes:>8}) {wide_msg}");
 
     countries
         .par_iter()
         .flat_map(|c| c.files())
-        .progress_with(main_bar)
+        .progress_with(pb)
         .for_each_init(
-            || {
-                Processor::create(
-                    problems.clone(),
-                    bars.add(ProgressBar::new(100))
-                        .with_style(bar_style.clone()),
-                )
-            },
+            || Processor::create(problems.clone()),
             |processor, expected_file| match zip_files.get(&expected_file.filename) {
                 None => problems.lock().unwrap().push(Problem::NotFound {
                     filename: expected_file.filename,
@@ -151,8 +137,6 @@ fn analyze(
                 Some(actual_file) => processor.process_file(actual_file, expected_file),
             },
         );
-
-    bars_thread.join().unwrap()?;
 
     Ok(Arc::try_unwrap(problems).unwrap().into_inner().unwrap())
 }
