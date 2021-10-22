@@ -2,19 +2,19 @@
 name = "maps-download-check"
 version = "0.2.0"
 authors = ["Paco van der Linden <pavadeli@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 anyhow = "1.0.44"
-console = "0.14.1"
+console = "0.15.0"
 indicatif = { version = "0.16.2", features = ["with_rayon"] }
 md5 = "0.7.0"
 quick-xml = { version = "0.22.0", features = ["serialize"] }
 rayon = "1.5.1"
-rfd = "0.5.0"
+rfd = "0.5.1"
 serde = { version = "1.0.130", features = ["derive"] }
-structopt = "0.3.23"
-thiserror = "1.0.29"
+structopt = "0.3.25"
+thiserror = "1.0.30"
 
 [profile.release]
 lto = true
