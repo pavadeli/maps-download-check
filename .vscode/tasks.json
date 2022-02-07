@@ -1,0 +1,40 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "cargo",
+      "command": "build",
+      "args": ["--release"],
+      "problemMatcher": ["$rustc"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "label": "Build package"
+    },
+    {
+      "type": "cargo",
+      "command": "test",
+      "problemMatcher": ["$rustc"],
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "label": "Test package"
+    },
+    {
+      "type": "cargo",
+      "command": "upgrade",
+      "group": "none",
+      "label": "Upgrade dependencies"
+    },
+    {
+      "type": "cargo",
+      "command": "install",
+      "args": ["--path", "${workspaceFolder}"],
+      "problemMatcher": ["$rustc"],
+      "group": "none",
+      "label": "Install tool locally"
+    }
+  ]
+}

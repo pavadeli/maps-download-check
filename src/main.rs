@@ -93,7 +93,7 @@ fn main() -> Result<()> {
     }
 
     for file in corrupt {
-        println!("Removing: {}", file);
+        println!("Removing: {file}");
         remove_file(path.join(file))?;
     }
 
@@ -150,9 +150,9 @@ fn report_problems(problems: &[Problem]) {
     }
     println!("Encountered {} problem(s):", problems.len());
     if let Some(s) = problems.missing_files_msg() {
-        println!("- {}", s)
+        println!("- {s}")
     }
     for p in problems.other_errors() {
-        println!("- {}", p);
+        println!("- {p}");
     }
 }
