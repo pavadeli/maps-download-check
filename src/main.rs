@@ -124,7 +124,8 @@ fn analyze(
 ) -> Result<Vec<Problem>> {
     let pb = ProgressBar::new(total_size).with_style(
         ProgressStyle::default_bar()
-            .template("[{elapsed_precise}] {bar:40} {bytes:.bold}/{total_bytes:.bold}"),
+            .template("[{elapsed_precise}] {bar:40} {bytes:.bold}/{total_bytes:.bold}")
+            .unwrap(),
     );
     let problems: Arc<Mutex<Vec<Problem>>> = Arc::default();
 

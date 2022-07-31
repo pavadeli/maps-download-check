@@ -1,4 +1,5 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
+use console::Style;
 use quick_xml::de::from_reader;
 use serde::Deserialize;
 use std::{collections::HashMap, fs::File, io::BufReader, path::Path};
@@ -22,10 +23,16 @@ impl Manifest {
             .sales_region
             .regions
             .iter()
-            .map(|r| {
-                country_map.remove(&r.id).ok_or_else(|| {
-                    anyhow!("Could not link country with id: {} in update.xml", r.id)
-                })
+            .filter_map(|r| {
+                let country = country_map.remove(&r.id).map(Ok);
+                if country.is_none() {
+                    eprintln!(
+                        "{}: No info found for country with id: {}\n(country will be skipped in integrity checks)",
+                        Style::new().red().bold().apply_to("WARNING"),
+                        Style::new().bold().apply_to(r.id)
+                    )
+                }
+                country
             })
             .collect()
     }

@@ -26,14 +26,12 @@ impl Processor {
     }
 
     pub fn process_file(&mut self, actual_file: &DirEntry, expected_file: ZipFile) {
-        let size = expected_file.packedsize;
         if let Err(e) = self.try_process_file(actual_file, expected_file) {
             self.problems
                 .lock()
                 .unwrap()
                 .push(e.downcast().unwrap_or_else(|e| e.into()))
         }
-        self.bar.inc(size);
     }
 
     fn try_process_file(&mut self, actual_file: &DirEntry, expected_file: ZipFile) -> Result<()> {
@@ -70,6 +68,7 @@ impl Processor {
                 break;
             }
             context.consume(&self.buf[..n]);
+            self.bar.inc(n as u64);
         }
         Ok(format!("{:x}", context.compute()))
     }
