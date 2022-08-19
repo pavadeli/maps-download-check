@@ -46,7 +46,7 @@ impl Country {
     pub fn files(&self) -> impl Iterator<Item = ZipFile> {
         self.data_groups
             .iter()
-            .map(move |dg| ZipFile::new(format!("{}_{:02}.zip", self.id, dg.id), &dg.info))
+            .map(|dg| ZipFile::new(format!("{}_{:02}.zip", self.id, dg.id), &dg.info))
             .chain(
                 self.speech_recognition
                     .as_ref()

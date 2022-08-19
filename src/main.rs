@@ -34,9 +34,8 @@ pub struct Opt {
 
 fn main() -> Result<()> {
     let bold = Style::new().bold();
-    let opt: Opt = StructOpt::from_args();
-    let path = opt
-        .dir
+    let Opt { dir, force_delete } = StructOpt::from_args();
+    let path = dir
         .or_else(|| {
             println!("Please select the folder that contains the update.xml");
             FileDialog::new().pick_folder()
@@ -72,32 +71,8 @@ fn main() -> Result<()> {
     let problems = analyze(files, &zip_files, total_size)?;
 
     println!();
-    report_problems(&problems);
 
-    let corrupt = problems.corrupt_files();
-
-    if corrupt.is_empty() {
-        println!("No actions needed.");
-        return Ok(());
-    }
-
-    if !opt.force_delete {
-        print!("Do you want to remove the corrupt files? (Y/n) ");
-        stdout().flush()?;
-        let mut response = String::new();
-        stdin().read_line(&mut response)?;
-        if !matches!(response.trim(), "" | "y" | "Y") {
-            println!("Aborting");
-            return Ok(());
-        }
-    }
-
-    for file in corrupt {
-        println!("Removing: {file}");
-        remove_file(path.join(file))?;
-    }
-
-    println!("Done.");
+    handle_problems(problems, force_delete, path)?;
 
     Ok(())
 }
@@ -144,11 +119,12 @@ fn analyze(
     Ok(Arc::try_unwrap(problems).unwrap().into_inner().unwrap())
 }
 
-fn report_problems(problems: &[Problem]) {
+fn handle_problems(problems: Vec<Problem>, force_delete: bool, path: PathBuf) -> Result<()> {
     if problems.is_empty() {
         println!("No problems encountered, you are good to go!");
-        return;
+        return Ok(());
     }
+
     println!("Encountered {} problem(s):", problems.len());
     if let Some(s) = problems.missing_files_msg() {
         println!("- {s}")
@@ -156,4 +132,32 @@ fn report_problems(problems: &[Problem]) {
     for p in problems.other_errors() {
         println!("- {p}");
     }
+
+    let corrupt = problems.corrupt_files();
+    if corrupt.is_empty() {
+        println!(
+            "No corrupt files to remove, restart the downloader to address the missing files."
+        );
+        return Ok(());
+    }
+
+    if !force_delete {
+        print!("Do you want to remove the corrupt files? (Y/n) ");
+        stdout().flush()?;
+        let mut response = String::new();
+        stdin().read_line(&mut response)?;
+        if !matches!(response.trim(), "" | "y" | "Y") {
+            println!("Aborting");
+            return Ok(());
+        }
+    }
+
+    for file in corrupt {
+        println!("Removing: {file}");
+        remove_file(path.join(file))?;
+    }
+
+    println!("Done, restart the downloader to address the missing files.");
+
+    Ok(())
 }

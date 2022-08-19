@@ -8,16 +8,16 @@ description = "Checks the downloaded Here maps for the Jaguar I-PACE for corrupt
 repository = "https://github.com/pavadeli/maps-download-check"
 
 [dependencies]
-anyhow = "1.0.58"
+anyhow = "1.0.62"
 console = "0.15.1"
 indicatif = { version = "0.17.0", features = ["rayon"] }
 md5 = "0.7.0"
 quick-xml = { version = "0.23.0", features = ["serialize"] }
 rayon = "1.5.3"
 rfd = "0.10.0"
-serde = { version = "1.0.140", features = ["derive"] }
+serde = { version = "1.0.143", features = ["derive"] }
 structopt = "0.3.26"
-thiserror = "1.0.31"
+thiserror = "1.0.32"
 
 [profile.release]
 lto = true

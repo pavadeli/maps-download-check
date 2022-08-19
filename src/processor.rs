@@ -3,26 +3,19 @@ use anyhow::Result;
 use indicatif::ProgressBar;
 use std::{
     fs::{DirEntry, File},
-    io::Read,
+    io::copy,
     path::Path,
     sync::{Arc, Mutex},
 };
 
-const BUF_SIZE: usize = 8 * 1024;
-
 pub struct Processor {
     problems: Arc<Mutex<Vec<Problem>>>,
     bar: ProgressBar,
-    buf: [u8; BUF_SIZE],
 }
 
 impl Processor {
     pub fn create(problems: Arc<Mutex<Vec<Problem>>>, bar: ProgressBar) -> Self {
-        Self {
-            problems,
-            bar,
-            buf: [0; BUF_SIZE],
-        }
+        Self { problems, bar }
     }
 
     pub fn process_file(&mut self, actual_file: &DirEntry, expected_file: ZipFile) {
@@ -38,6 +31,8 @@ impl Processor {
         let size = expected_file.packedsize;
         let zip_size = actual_file.metadata()?.len();
         if zip_size != size {
+            // Move the bar to the right to indicate progress, even if we didn't actually read any bytes.
+            self.bar.inc(size);
             return Err(Problem::WrongSize {
                 filename: expected_file.filename,
                 expected: size,
@@ -60,16 +55,9 @@ impl Processor {
     }
 
     fn get_md5(&mut self, path: &Path) -> Result<String> {
-        let mut file = File::open(path)?;
+        let file = File::open(path)?;
         let mut context = md5::Context::new();
-        loop {
-            let n = file.read(&mut self.buf)?;
-            if n == 0 {
-                break;
-            }
-            context.consume(&self.buf[..n]);
-            self.bar.inc(n as u64);
-        }
+        copy(&mut self.bar.wrap_read(file), &mut context)?;
         Ok(format!("{:x}", context.compute()))
     }
 }
