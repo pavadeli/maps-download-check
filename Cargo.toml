@@ -15,7 +15,7 @@ md5 = "0.7.0"
 quick-xml = { version = "0.23.0", features = ["serialize"] }
 rayon = "1.5.3"
 rfd = "0.10.0"
-serde = { version = "1.0.143", features = ["derive"] }
+serde = { version = "1.0.144", features = ["derive"] }
 structopt = "0.3.26"
 thiserror = "1.0.32"
 

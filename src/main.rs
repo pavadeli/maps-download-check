@@ -1,11 +1,11 @@
 use crate::{
     manifest::{Manifest, ZipFile},
     problem::{Problem, ProblemList},
-    processor::Processor,
 };
 use anyhow::{anyhow, Context, Result};
 use console::Style;
 use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
+use processor::process_file;
 use rayon::prelude::*;
 use rfd::FileDialog;
 use std::{
@@ -13,7 +13,6 @@ use std::{
     fs::{read_dir, remove_file, DirEntry},
     io::{stdin, stdout, Write},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
 };
 use structopt::StructOpt;
 
@@ -68,7 +67,7 @@ fn main() -> Result<()> {
     );
 
     println!("Performing integrity check...");
-    let problems = analyze(files, &zip_files, total_size)?;
+    let problems = analyze(files, &zip_files, total_size);
 
     println!();
 
@@ -96,27 +95,29 @@ fn analyze(
     files: Vec<ZipFile>,
     zip_files: &HashMap<String, DirEntry>,
     total_size: u64,
-) -> Result<Vec<Problem>> {
-    let pb = ProgressBar::new(total_size).with_style(
+) -> Vec<Problem> {
+    let bar = ProgressBar::new(total_size).with_style(
         ProgressStyle::default_bar()
             .template("[{elapsed_precise}] {bar:40} {bytes:.bold}/{total_bytes:.bold}")
             .unwrap(),
     );
-    let problems: Arc<Mutex<Vec<Problem>>> = Arc::default();
 
-    files.into_par_iter().for_each_init(
-        || Processor::create(problems.clone(), pb.clone()),
-        |processor, expected_file| match zip_files.get(&expected_file.filename) {
-            None => problems.lock().unwrap().push(Problem::NotFound {
-                filename: expected_file.filename,
-            }),
-            Some(actual_file) => processor.process_file(actual_file, expected_file),
-        },
-    );
+    let problems: Vec<Problem> = files
+        .into_par_iter()
+        .map_with(bar.clone(), |bar, expected_file| {
+            match zip_files.get(&expected_file.filename) {
+                None => Some(Problem::NotFound {
+                    filename: expected_file.filename,
+                }),
+                Some(actual_file) => process_file(bar, actual_file, expected_file),
+            }
+        })
+        .flatten()
+        .collect();
 
-    pb.abandon();
+    bar.abandon();
 
-    Ok(Arc::try_unwrap(problems).unwrap().into_inner().unwrap())
+    problems
 }
 
 fn handle_problems(problems: Vec<Problem>, force_delete: bool, path: PathBuf) -> Result<()> {
